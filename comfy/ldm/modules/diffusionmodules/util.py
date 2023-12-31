@@ -36,10 +36,7 @@ class AlphaBlender(nn.Module):
 
         if self.merge_strategy == "fixed":
             self.register_buffer("mix_factor", torch.Tensor([alpha]))
-        elif (
-            self.merge_strategy == "learned"
-            or self.merge_strategy == "learned_with_images"
-        ):
+        elif self.merge_strategy in {"learned", "learned_with_images"}:
             self.register_parameter(
                 "mix_factor", torch.nn.Parameter(torch.Tensor([alpha]))
             )
@@ -77,11 +74,10 @@ class AlphaBlender(nn.Module):
         image_only_indicator=None,
     ) -> torch.Tensor:
         alpha = self.get_alpha(image_only_indicator)
-        x = (
+        return (
             alpha.to(x_spatial.dtype) * x_spatial
             + (1.0 - alpha).to(x_spatial.dtype) * x_temporal
         )
-        return x
 
 
 def make_beta_schedule(schedule, n_timestep, linear_start=1e-4, linear_end=2e-2, cosine_s=8e-3):

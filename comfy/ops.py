@@ -89,11 +89,11 @@ class disable_weight_init:
                 return super().forward(*args, **kwargs)
 
     @classmethod
-    def conv_nd(s, dims, *args, **kwargs):
+    def conv_nd(cls, dims, *args, **kwargs):
         if dims == 2:
-            return s.Conv2d(*args, **kwargs)
+            return cls.Conv2d(*args, **kwargs)
         elif dims == 3:
-            return s.Conv3d(*args, **kwargs)
+            return cls.Conv3d(*args, **kwargs)
         else:
             raise ValueError(f"unsupported dimensions: {dims}")
 

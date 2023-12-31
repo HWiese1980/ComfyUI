@@ -9,7 +9,7 @@ def reshape_latent_to(target_shape, latent):
 
 class LatentAdd:
     @classmethod
-    def INPUT_TYPES(s):
+    def INPUT_TYPES(cls):
         return {"required": { "samples1": ("LATENT",), "samples2": ("LATENT",)}}
 
     RETURN_TYPES = ("LATENT",)
@@ -29,7 +29,7 @@ class LatentAdd:
 
 class LatentSubtract:
     @classmethod
-    def INPUT_TYPES(s):
+    def INPUT_TYPES(cls):
         return {"required": { "samples1": ("LATENT",), "samples2": ("LATENT",)}}
 
     RETURN_TYPES = ("LATENT",)
@@ -49,7 +49,7 @@ class LatentSubtract:
 
 class LatentMultiply:
     @classmethod
-    def INPUT_TYPES(s):
+    def INPUT_TYPES(cls):
         return {"required": { "samples": ("LATENT",),
                               "multiplier": ("FLOAT", {"default": 1.0, "min": -10.0, "max": 10.0, "step": 0.01}),
                              }}
@@ -68,7 +68,7 @@ class LatentMultiply:
 
 class LatentInterpolate:
     @classmethod
-    def INPUT_TYPES(s):
+    def INPUT_TYPES(cls):
         return {"required": { "samples1": ("LATENT",),
                               "samples2": ("LATENT",),
                               "ratio": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.01}),
@@ -102,7 +102,7 @@ class LatentInterpolate:
 
 class LatentBatch:
     @classmethod
-    def INPUT_TYPES(s):
+    def INPUT_TYPES(cls):
         return {"required": { "samples1": ("LATENT",), "samples2": ("LATENT",)}}
 
     RETURN_TYPES = ("LATENT",)
@@ -119,7 +119,9 @@ class LatentBatch:
             s2 = comfy.utils.common_upscale(s2, s1.shape[3], s1.shape[2], "bilinear", "center")
         s = torch.cat((s1, s2), dim=0)
         samples_out["samples"] = s
-        samples_out["batch_index"] = samples1.get("batch_index", [x for x in range(0, s1.shape[0])]) + samples2.get("batch_index", [x for x in range(0, s2.shape[0])])
+        samples_out["batch_index"] = samples1.get(
+            "batch_index", list(range(0, s1.shape[0]))
+        ) + samples2.get("batch_index", list(range(0, s2.shape[0])))
         return (samples_out,)
 
 NODE_CLASS_MAPPINGS = {

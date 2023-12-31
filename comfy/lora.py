@@ -14,28 +14,28 @@ def load_lora(lora, to_load):
     patch_dict = {}
     loaded_keys = set()
     for x in to_load:
-        alpha_name = "{}.alpha".format(x)
+        alpha_name = f"{x}.alpha"
         alpha = None
         if alpha_name in lora.keys():
             alpha = lora[alpha_name].item()
             loaded_keys.add(alpha_name)
 
-        regular_lora = "{}.lora_up.weight".format(x)
-        diffusers_lora = "{}_lora.up.weight".format(x)
-        transformers_lora = "{}.lora_linear_layer.up.weight".format(x)
+        regular_lora = f"{x}.lora_up.weight"
+        diffusers_lora = f"{x}_lora.up.weight"
+        transformers_lora = f"{x}.lora_linear_layer.up.weight"
         A_name = None
 
         if regular_lora in lora.keys():
             A_name = regular_lora
-            B_name = "{}.lora_down.weight".format(x)
-            mid_name = "{}.lora_mid.weight".format(x)
+            B_name = f"{x}.lora_down.weight"
+            mid_name = f"{x}.lora_mid.weight"
         elif diffusers_lora in lora.keys():
             A_name = diffusers_lora
-            B_name = "{}_lora.down.weight".format(x)
+            B_name = f"{x}_lora.down.weight"
             mid_name = None
         elif transformers_lora in lora.keys():
             A_name = transformers_lora
-            B_name ="{}.lora_linear_layer.down.weight".format(x)
+            B_name = f"{x}.lora_linear_layer.down.weight"
             mid_name = None
 
         if A_name is not None:
@@ -49,12 +49,12 @@ def load_lora(lora, to_load):
 
 
         ######## loha
-        hada_w1_a_name = "{}.hada_w1_a".format(x)
-        hada_w1_b_name = "{}.hada_w1_b".format(x)
-        hada_w2_a_name = "{}.hada_w2_a".format(x)
-        hada_w2_b_name = "{}.hada_w2_b".format(x)
-        hada_t1_name = "{}.hada_t1".format(x)
-        hada_t2_name = "{}.hada_t2".format(x)
+        hada_w1_a_name = f"{x}.hada_w1_a"
+        hada_w1_b_name = f"{x}.hada_w1_b"
+        hada_w2_a_name = f"{x}.hada_w2_a"
+        hada_w2_b_name = f"{x}.hada_w2_b"
+        hada_t1_name = f"{x}.hada_t1"
+        hada_t2_name = f"{x}.hada_t2"
         if hada_w1_a_name in lora.keys():
             hada_t1 = None
             hada_t2 = None
@@ -72,13 +72,13 @@ def load_lora(lora, to_load):
 
 
         ######## lokr
-        lokr_w1_name = "{}.lokr_w1".format(x)
-        lokr_w2_name = "{}.lokr_w2".format(x)
-        lokr_w1_a_name = "{}.lokr_w1_a".format(x)
-        lokr_w1_b_name = "{}.lokr_w1_b".format(x)
-        lokr_t2_name = "{}.lokr_t2".format(x)
-        lokr_w2_a_name = "{}.lokr_w2_a".format(x)
-        lokr_w2_b_name = "{}.lokr_w2_b".format(x)
+        lokr_w1_name = f"{x}.lokr_w1"
+        lokr_w2_name = f"{x}.lokr_w2"
+        lokr_w1_a_name = f"{x}.lokr_w1_a"
+        lokr_w1_b_name = f"{x}.lokr_w1_b"
+        lokr_t2_name = f"{x}.lokr_t2"
+        lokr_w2_a_name = f"{x}.lokr_w2_a"
+        lokr_w2_b_name = f"{x}.lokr_w2_b"
 
         lokr_w1 = None
         if lokr_w1_name in lora.keys():
@@ -119,10 +119,10 @@ def load_lora(lora, to_load):
             patch_dict[to_load[x]] = ("lokr", (lokr_w1, lokr_w2, alpha, lokr_w1_a, lokr_w1_b, lokr_w2_a, lokr_w2_b, lokr_t2))
 
         #glora
-        a1_name = "{}.a1.weight".format(x)
-        a2_name = "{}.a2.weight".format(x)
-        b1_name = "{}.b1.weight".format(x)
-        b2_name = "{}.b2.weight".format(x)
+        a1_name = f"{x}.a1.weight"
+        a2_name = f"{x}.a2.weight"
+        b1_name = f"{x}.b1.weight"
+        b2_name = f"{x}.b2.weight"
         if a1_name in lora:
             patch_dict[to_load[x]] = ("glora", (lora[a1_name], lora[a2_name], lora[b1_name], lora[b2_name], alpha))
             loaded_keys.add(a1_name)
@@ -130,8 +130,8 @@ def load_lora(lora, to_load):
             loaded_keys.add(b1_name)
             loaded_keys.add(b2_name)
 
-        w_norm_name = "{}.w_norm".format(x)
-        b_norm_name = "{}.b_norm".format(x)
+        w_norm_name = f"{x}.w_norm"
+        b_norm_name = f"{x}.b_norm"
         w_norm = lora.get(w_norm_name, None)
         b_norm = lora.get(b_norm_name, None)
 
@@ -140,18 +140,18 @@ def load_lora(lora, to_load):
             patch_dict[to_load[x]] = ("diff", (w_norm,))
             if b_norm is not None:
                 loaded_keys.add(b_norm_name)
-                patch_dict["{}.bias".format(to_load[x][:-len(".weight")])] = ("diff", (b_norm,))
+                patch_dict[f'{to_load[x][:-len(".weight")]}.bias'] = ("diff", (b_norm,))
 
-        diff_name = "{}.diff".format(x)
+        diff_name = f"{x}.diff"
         diff_weight = lora.get(diff_name, None)
         if diff_weight is not None:
             patch_dict[to_load[x]] = ("diff", (diff_weight,))
             loaded_keys.add(diff_name)
 
-        diff_bias_name = "{}.diff_b".format(x)
+        diff_bias_name = f"{x}.diff_b"
         diff_bias = lora.get(diff_bias_name, None)
         if diff_bias is not None:
-            patch_dict["{}.bias".format(to_load[x][:-len(".weight")])] = ("diff", (diff_bias,))
+            patch_dict[f'{to_load[x][:-len(".weight")]}.bias'] = ("diff", (diff_bias,))
             loaded_keys.add(diff_bias_name)
 
     for x in lora.keys():

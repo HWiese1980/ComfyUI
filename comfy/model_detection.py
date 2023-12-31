@@ -4,12 +4,8 @@ import comfy.supported_models_base
 def count_blocks(state_dict_keys, prefix_string):
     count = 0
     while True:
-        c = False
-        for k in state_dict_keys:
-            if k.startswith(prefix_string.format(count)):
-                c = True
-                break
-        if c == False:
+        c = any(k.startswith(prefix_string.format(count)) for k in state_dict_keys)
+        if not c:
             break
         count += 1
     return count
@@ -18,13 +14,18 @@ def calculate_transformer_depth(prefix, state_dict_keys, state_dict):
     context_dim = None
     use_linear_in_transformer = False
 
-    transformer_prefix = prefix + "1.transformer_blocks."
+    transformer_prefix = f"{prefix}1.transformer_blocks."
     transformer_keys = sorted(list(filter(lambda a: a.startswith(transformer_prefix), state_dict_keys)))
     if len(transformer_keys) > 0:
         last_transformer_depth = count_blocks(state_dict_keys, transformer_prefix + '{}')
-        context_dim = state_dict['{}0.attn2.to_k.weight'.format(transformer_prefix)].shape[1]
-        use_linear_in_transformer = len(state_dict['{}1.proj_in.weight'.format(prefix)].shape) == 2
-        time_stack = '{}1.time_stack.0.attn1.to_q.weight'.format(prefix) in state_dict or '{}1.time_mix_blocks.0.attn1.to_q.weight'.format(prefix) in state_dict
+        context_dim = state_dict[f'{transformer_prefix}0.attn2.to_k.weight'].shape[1]
+        use_linear_in_transformer = (
+            len(state_dict[f'{prefix}1.proj_in.weight'].shape) == 2
+        )
+        time_stack = (
+            f'{prefix}1.time_stack.0.attn1.to_q.weight' in state_dict
+            or f'{prefix}1.time_mix_blocks.0.attn1.to_q.weight' in state_dict
+        )
         return last_transformer_depth, context_dim, use_linear_in_transformer, time_stack
     return None
 
@@ -39,7 +40,7 @@ def detect_unet_config(state_dict, key_prefix, dtype):
         "legacy": False
     }
 
-    y_input = '{}label_emb.0.0.weight'.format(key_prefix)
+    y_input = f'{key_prefix}label_emb.0.0.weight'
     if y_input in state_dict_keys:
         unet_config["num_classes"] = "sequential"
         unet_config["adm_in_channels"] = state_dict[y_input].shape[1]
@@ -47,8 +48,8 @@ def detect_unet_config(state_dict, key_prefix, dtype):
         unet_config["adm_in_channels"] = None
 
     unet_config["dtype"] = dtype
-    model_channels = state_dict['{}input_blocks.0.0.weight'.format(key_prefix)].shape[0]
-    in_channels = state_dict['{}input_blocks.0.0.weight'.format(key_prefix)].shape[1]
+    model_channels = state_dict[f'{key_prefix}input_blocks.0.0.weight'].shape[0]
+    in_channels = state_dict[f'{key_prefix}input_blocks.0.0.weight'].shape[1]
 
     num_res_blocks = []
     channel_mult = []
@@ -66,10 +67,12 @@ def detect_unet_config(state_dict, key_prefix, dtype):
     last_res_blocks = 0
     last_channel_mult = 0
 
-    input_block_count = count_blocks(state_dict_keys, '{}input_blocks'.format(key_prefix) + '.{}.')
+    input_block_count = count_blocks(
+        state_dict_keys, f'{key_prefix}input_blocks' + '.{}.'
+    )
     for count in range(input_block_count):
-        prefix = '{}input_blocks.{}.'.format(key_prefix, count)
-        prefix_output = '{}output_blocks.{}.'.format(key_prefix, input_block_count - count - 1)
+        prefix = f'{key_prefix}input_blocks.{count}.'
+        prefix_output = f'{key_prefix}output_blocks.{input_block_count - count - 1}.'
 
         block_keys = sorted(list(filter(lambda a: a.startswith(prefix), state_dict_keys)))
         if len(block_keys) == 0:
@@ -77,7 +80,7 @@ def detect_unet_config(state_dict, key_prefix, dtype):
 
         block_keys_output = sorted(list(filter(lambda a: a.startswith(prefix_output), state_dict_keys)))
 
-        if "{}0.op.weight".format(prefix) in block_keys: #new layer
+        if f"{prefix}0.op.weight" in block_keys: #new layer
             num_res_blocks.append(last_res_blocks)
             channel_mult.append(last_channel_mult)
 
@@ -90,10 +93,13 @@ def detect_unet_config(state_dict, key_prefix, dtype):
             else:
                 transformer_depth_output.append(0)
         else:
-            res_block_prefix = "{}0.in_layers.0.weight".format(prefix)
+            res_block_prefix = f"{prefix}0.in_layers.0.weight"
             if res_block_prefix in block_keys:
                 last_res_blocks += 1
-                last_channel_mult = state_dict["{}0.out_layers.3.weight".format(prefix)].shape[0] // model_channels
+                last_channel_mult = (
+                    state_dict[f"{prefix}0.out_layers.3.weight"].shape[0]
+                    // model_channels
+                )
 
                 out = calculate_transformer_depth(prefix, state_dict_keys, state_dict)
                 if out is not None:
@@ -105,7 +111,7 @@ def detect_unet_config(state_dict, key_prefix, dtype):
                 else:
                     transformer_depth.append(0)
 
-            res_block_prefix = "{}0.in_layers.0.weight".format(prefix_output)
+            res_block_prefix = f"{prefix_output}0.in_layers.0.weight"
             if res_block_prefix in block_keys_output:
                 out = calculate_transformer_depth(prefix_output, state_dict_keys, state_dict)
                 if out is not None:
@@ -116,8 +122,11 @@ def detect_unet_config(state_dict, key_prefix, dtype):
 
     num_res_blocks.append(last_res_blocks)
     channel_mult.append(last_channel_mult)
-    if "{}middle_block.1.proj_in.weight".format(key_prefix) in state_dict_keys:
-        transformer_depth_middle = count_blocks(state_dict_keys, '{}middle_block.1.transformer_blocks.'.format(key_prefix) + '{}')
+    if f"{key_prefix}middle_block.1.proj_in.weight" in state_dict_keys:
+        transformer_depth_middle = count_blocks(
+            state_dict_keys,
+            f'{key_prefix}middle_block.1.transformer_blocks.' + '{}',
+        )
     else:
         transformer_depth_middle = -1
 
@@ -207,18 +216,21 @@ def unet_config_from_diffusers_unet(state_dict, dtype):
     attn_res = 1
     down_blocks = count_blocks(state_dict, "down_blocks.{}")
     for i in range(down_blocks):
-        attn_blocks = count_blocks(state_dict, "down_blocks.{}.attentions.".format(i) + '{}')
+        attn_blocks = count_blocks(state_dict, f"down_blocks.{i}.attentions." + '{}')
         for ab in range(attn_blocks):
-            transformer_count = count_blocks(state_dict, "down_blocks.{}.attentions.{}.transformer_blocks.".format(i, ab) + '{}')
+            transformer_count = count_blocks(
+                state_dict,
+                f"down_blocks.{i}.attentions.{ab}.transformer_blocks." + '{}',
+            )
             transformer_depth.append(transformer_count)
             if transformer_count > 0:
-                match["context_dim"] = state_dict["down_blocks.{}.attentions.{}.transformer_blocks.0.attn2.to_k.weight".format(i, ab)].shape[1]
+                match["context_dim"] = state_dict[
+                    f"down_blocks.{i}.attentions.{ab}.transformer_blocks.0.attn2.to_k.weight"
+                ].shape[1]
 
         attn_res *= 2
         if attn_blocks == 0:
-            transformer_depth.append(0)
-            transformer_depth.append(0)
-
+            transformer_depth.extend((0, 0))
     match["transformer_depth"] = transformer_depth
 
     match["model_channels"] = state_dict["conv_in.weight"].shape[0]
@@ -298,11 +310,7 @@ def unet_config_from_diffusers_unet(state_dict, dtype):
     supported_models = [SDXL, SDXL_refiner, SD21, SD15, SD21_uncliph, SD21_unclipl, SDXL_mid_cnet, SDXL_small_cnet, SDXL_diffusers_inpaint, SSD_1B, Segmind_Vega]
 
     for unet_config in supported_models:
-        matches = True
-        for k in match:
-            if match[k] != unet_config[k]:
-                matches = False
-                break
+        matches = all(v == unet_config[k] for k, v in match.items())
         if matches:
             return convert_config(unet_config)
     return None

@@ -27,7 +27,6 @@ import comfy.taesd.taesd
 
 def load_model_weights(model, sd):
     m, u = model.load_state_dict(sd, strict=False)
-    m = set(m)
     unexpected_keys = set(u)
 
     k = list(sd.keys())
@@ -35,7 +34,7 @@ def load_model_weights(model, sd):
         if x not in unexpected_keys:
             w = sd.pop(x)
             del w
-    if len(m) > 0:
+    if m := set(m):
         print("missing", m)
     return model
 
@@ -129,9 +128,7 @@ class CLIP:
 
         self.load_model()
         cond, pooled = self.cond_stage_model.encode_token_weights(tokens)
-        if return_pooled:
-            return cond, pooled
-        return cond
+        return (cond, pooled) if return_pooled else cond
 
     def encode(self, text):
         tokens = self.tokenize(text)
@@ -203,12 +200,46 @@ class VAE:
         pbar = comfy.utils.ProgressBar(steps)
 
         decode_fn = lambda a: (self.first_stage_model.decode(a.to(self.vae_dtype).to(self.device)) + 1.0).float()
-        output = torch.clamp((
-            (comfy.utils.tiled_scale(samples, decode_fn, tile_x // 2, tile_y * 2, overlap, upscale_amount = 8, output_device=self.output_device, pbar = pbar) +
-            comfy.utils.tiled_scale(samples, decode_fn, tile_x * 2, tile_y // 2, overlap, upscale_amount = 8, output_device=self.output_device, pbar = pbar) +
-             comfy.utils.tiled_scale(samples, decode_fn, tile_x, tile_y, overlap, upscale_amount = 8, output_device=self.output_device, pbar = pbar))
-            / 3.0) / 2.0, min=0.0, max=1.0)
-        return output
+        return torch.clamp(
+            (
+                (
+                    comfy.utils.tiled_scale(
+                        samples,
+                        decode_fn,
+                        tile_x // 2,
+                        tile_y * 2,
+                        overlap,
+                        upscale_amount=8,
+                        output_device=self.output_device,
+                        pbar=pbar,
+                    )
+                    + comfy.utils.tiled_scale(
+                        samples,
+                        decode_fn,
+                        tile_x * 2,
+                        tile_y // 2,
+                        overlap,
+                        upscale_amount=8,
+                        output_device=self.output_device,
+                        pbar=pbar,
+                    )
+                    + comfy.utils.tiled_scale(
+                        samples,
+                        decode_fn,
+                        tile_x,
+                        tile_y,
+                        overlap,
+                        upscale_amount=8,
+                        output_device=self.output_device,
+                        pbar=pbar,
+                    )
+                )
+                / 3.0
+            )
+            / 2.0,
+            min=0.0,
+            max=1.0,
+        )
 
     def encode_tiled_(self, pixel_samples, tile_x=512, tile_y=512, overlap = 64):
         steps = pixel_samples.shape[0] * comfy.utils.get_tiled_scale_steps(pixel_samples.shape[3], pixel_samples.shape[2], tile_x, tile_y, overlap)
@@ -269,8 +300,9 @@ class VAE:
     def encode_tiled(self, pixel_samples, tile_x=512, tile_y=512, overlap = 64):
         model_management.load_model_gpu(self.patcher)
         pixel_samples = pixel_samples.movedim(-1,1)
-        samples = self.encode_tiled_(pixel_samples, tile_x=tile_x, tile_y=tile_y, overlap=overlap)
-        return samples
+        return self.encode_tiled_(
+            pixel_samples, tile_x=tile_x, tile_y=tile_y, overlap=overlap
+        )
 
     def get_sd(self):
         return self.first_stage_model.state_dict()
@@ -289,16 +321,15 @@ def load_style_model(ckpt_path):
     if "style_embedding" in keys:
         model = comfy.t2i_adapter.adapter.StyleAdapter(width=1024, context_dim=768, num_head=8, n_layes=3, num_token=8)
     else:
-        raise Exception("invalid style model {}".format(ckpt_path))
+        raise Exception(f"invalid style model {ckpt_path}")
     model.load_state_dict(model_data)
     return StyleModel(model)
 
 
 def load_clip(ckpt_paths, embedding_directory=None):
-    clip_data = []
-    for p in ckpt_paths:
-        clip_data.append(comfy.utils.load_torch_file(p, safe_load=True))
-
+    clip_data = [
+        comfy.utils.load_torch_file(p, safe_load=True) for p in ckpt_paths
+    ]
     class EmptyClass:
         pass
 
@@ -445,10 +476,10 @@ def load_checkpoint_guess_config(ckpt_path, output_vae=True, output_clip=True, o
     model_config.set_manual_cast(manual_cast_dtype)
 
     if model_config is None:
-        raise RuntimeError("ERROR: Could not detect model type of: {}".format(ckpt_path))
+        raise RuntimeError(f"ERROR: Could not detect model type of: {ckpt_path}")
 
-    if model_config.clip_vision_prefix is not None:
-        if output_clipvision:
+    if output_clipvision:
+        if model_config.clip_vision_prefix is not None:
             clipvision = clip_vision.load_clipvision_from_sd(sd, model_config.clip_vision_prefix, True)
 
     if output_model:
@@ -524,7 +555,7 @@ def load_unet(unet_path):
     model = load_unet_state_dict(sd)
     if model is None:
         print("ERROR UNSUPPORTED UNET", unet_path)
-        raise RuntimeError("ERROR: Could not detect model type of: {}".format(unet_path))
+        raise RuntimeError(f"ERROR: Could not detect model type of: {unet_path}")
     return model
 
 def save_checkpoint(output_path, model, clip, vae, metadata=None):

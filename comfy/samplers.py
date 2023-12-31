@@ -11,8 +11,6 @@ import comfy.conds
 
 def get_area_and_mult(conds, x_in, timestep_in):
     area = (x_in.shape[2], x_in.shape[3], 0, 0)
-    strength = 1.0
-
     if 'timestep_start' in conds:
         timestep_start = conds['timestep_start']
         if timestep_in[0] > timestep_start:
@@ -23,16 +21,10 @@ def get_area_and_mult(conds, x_in, timestep_in):
             return None
     if 'area' in conds:
         area = conds['area']
-    if 'strength' in conds:
-        strength = conds['strength']
-
+    strength = conds['strength'] if 'strength' in conds else 1.0
     input_x = x_in[:,:,area[2]:area[0] + area[2],area[3]:area[1] + area[3]]
     if 'mask' in conds:
-        # Scale the mask to the size of the input
-        # The mask should have been resized as we began the sampling process
-        mask_strength = 1.0
-        if "mask_strength" in conds:
-            mask_strength = conds["mask_strength"]
+        mask_strength = conds["mask_strength"] if "mask_strength" in conds else 1.0
         mask = conds['mask']
         assert(mask.shape[1] == x_in.shape[2])
         assert(mask.shape[2] == x_in.shape[3])
@@ -57,17 +49,18 @@ def get_area_and_mult(conds, x_in, timestep_in):
             for t in range(rr):
                 mult[:,:,:,area[1] - 1 - t:area[1] - t] *= ((1.0/rr) * (t + 1))
 
-    conditioning = {}
     model_conds = conds["model_conds"]
-    for c in model_conds:
-        conditioning[c] = model_conds[c].process_cond(batch_size=x_in.shape[0], device=x_in.device, area=area)
-
+    conditioning = {
+        c: model_conds[c].process_cond(
+            batch_size=x_in.shape[0], device=x_in.device, area=area
+        )
+        for c in model_conds
+    }
     control = conds.get('control', None)
 
     patches = None
     if 'gligen' in conds:
         gligen = conds['gligen']
-        patches = {}
         gligen_type = gligen[0]
         gligen_model = gligen[1]
         if gligen_type == "position":
@@ -75,8 +68,7 @@ def get_area_and_mult(conds, x_in, timestep_in):
         else:
             gligen_patch = gligen_model.model.set_empty(input_x.shape, input_x.device)
 
-        patches['middle_patch'] = [gligen_patch]
-
+        patches = {'middle_patch': [gligen_patch]}
     cond_obj = collections.namedtuple('cond_obj', ['input_x', 'mult', 'conditioning', 'area', 'control', 'patches'])
     return cond_obj(input_x, mult, conditioning, area, control, patches)
 
@@ -85,10 +77,7 @@ def cond_equal_size(c1, c2):
         return True
     if c1.keys() != c2.keys():
         return False
-    for k in c1:
-        if not c1[k].can_concat(c2[k]):
-            return False
-    return True
+    return all(c1[k].can_concat(c2[k]) for k in c1)
 
 def can_concat_cond(c1, c2):
     if c1.input_x.shape != c2.input_x.shape:
@@ -123,12 +112,7 @@ def cond_cat(c_list):
             cur.append(x[k])
             temp[k] = cur
 
-    out = {}
-    for k in temp:
-        conds = temp[k]
-        out[k] = conds[0].concat(conds[1:])
-
-    return out
+    return {k: conds[0].concat(conds[1:]) for k, conds in temp.items()}
 
 def calc_cond_uncond_batch(model, cond, uncond, x_in, timestep, model_options):
     out_cond = torch.zeros_like(x_in)

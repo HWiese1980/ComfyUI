@@ -38,9 +38,7 @@ def uniq(arr):
 
 
 def default(val, d):
-    if exists(val):
-        return val
-    return d
+    return val if exists(val) else d
 
 
 def max_neg_value(t):
@@ -203,12 +201,7 @@ def attention_split(q, k, v, heads, mask=None):
 
     mem_free_total = model_management.get_free_memory(q.device)
 
-    if _ATTN_PRECISION =="fp32":
-        element_size = 4
-    else:
-        element_size = q.element_size()
-
-    gb = 1024 ** 3
+    element_size = 4 if _ATTN_PRECISION =="fp32" else q.element_size()
     tensor_size = q.shape[0] * q.shape[1] * k.shape[1] * element_size
     modifier = 3
     mem_required = tensor_size * modifier
@@ -222,6 +215,7 @@ def attention_split(q, k, v, heads, mask=None):
 
     if steps > 64:
         max_res = math.floor(math.sqrt(math.sqrt(mem_free_total / 2.5)) / 8) * 64
+        gb = 1024 ** 3
         raise RuntimeError(f'Not enough memory, use lower resolution (max approx. {max_res}x{max_res}). '
                             f'Need: {mem_required/64/gb:0.1f}GB free, Have:{mem_free_total/gb:0.1f}GB free')
 
@@ -247,19 +241,18 @@ def attention_split(q, k, v, heads, mask=None):
                 del s2
             break
         except model_management.OOM_EXCEPTION as e:
-            if first_op_done == False:
-                model_management.soft_empty_cache(True)
-                if cleared_cache == False:
-                    cleared_cache = True
-                    print("out of memory error, emptying cache and trying again")
-                    continue
-                steps *= 2
-                if steps > 64:
-                    raise e
-                print("out of memory error, increasing steps and trying again", steps)
-            else:
+            if first_op_done != False:
                 raise e
 
+            model_management.soft_empty_cache(True)
+            if cleared_cache == False:
+                cleared_cache = True
+                print("out of memory error, emptying cache and trying again")
+                continue
+            steps *= 2
+            if steps > 64:
+                raise e
+            print("out of memory error, increasing steps and trying again", steps)
     del q, k, v
 
     r1 = (
@@ -331,13 +324,12 @@ if model_management.xformers_enabled():
 elif model_management.pytorch_attention_enabled():
     print("Using pytorch cross attention")
     optimized_attention = attention_pytorch
+elif args.use_split_cross_attention:
+    print("Using split optimization for cross attention")
+    optimized_attention = attention_split
 else:
-    if args.use_split_cross_attention:
-        print("Using split optimization for cross attention")
-        optimized_attention = attention_split
-    else:
-        print("Using sub quadratic optimization for cross attention, if you have memory or speed issues try using: --use-split-cross-attention")
-        optimized_attention = attention_sub_quad
+    print("Using sub quadratic optimization for cross attention, if you have memory or speed issues try using: --use-split-cross-attention")
+    optimized_attention = attention_sub_quad
 
 if model_management.pytorch_attention_enabled():
     optimized_attention_masked = attention_pytorch
@@ -348,10 +340,7 @@ def optimized_attention_for_device(device, mask=False):
             return attention_pytorch
         else:
             return attention_basic
-    if mask:
-        return optimized_attention_masked
-
-    return optimized_attention
+    return optimized_attention_masked if mask else optimized_attention
 
 
 class CrossAttention(nn.Module):
@@ -412,10 +401,7 @@ class BasicTransformerBlock(nn.Module):
             else:
                 self.attn2 = None
         else:
-            context_dim_attn2 = None
-            if not switch_temporal_ca_to_sa:
-                context_dim_attn2 = context_dim
-
+            context_dim_attn2 = context_dim if not switch_temporal_ca_to_sa else None
             self.attn2 = CrossAttention(query_dim=inner_dim, context_dim=context_dim_attn2,
                                 heads=n_heads, dim_head=d_head, dropout=dropout, dtype=dtype, device=device, operations=operations)  # is self-attn if context is none
             self.norm2 = operations.LayerNorm(inner_dim, dtype=dtype, device=device)
@@ -455,10 +441,7 @@ class BasicTransformerBlock(nn.Module):
                 x += x_skip
 
         n = self.norm1(x)
-        if self.disable_self_attn:
-            context_attn1 = context
-        else:
-            context_attn1 = None
+        context_attn1 = context if self.disable_self_attn else None
         value_attn1 = None
 
         if "attn1_patch" in transformer_patches:
@@ -503,10 +486,7 @@ class BasicTransformerBlock(nn.Module):
 
         if self.attn2 is not None:
             n = self.norm2(x)
-            if self.switch_temporal_ca_to_sa:
-                context_attn2 = n
-            else:
-                context_attn2 = context
+            context_attn2 = n if self.switch_temporal_ca_to_sa else context
             value_attn2 = None
             if "attn2_patch" in transformer_patches:
                 patch = transformer_patches["attn2_patch"]
@@ -705,10 +685,7 @@ class SpatialVideoTransformer(SpatialTransformer):
     ) -> torch.Tensor:
         _, _, h, w = x.shape
         x_in = x
-        spatial_context = None
-        if exists(context):
-            spatial_context = context
-
+        spatial_context = context if exists(context) else None
         if self.use_spatial_context:
             assert (
                 context.ndim == 3
@@ -720,7 +697,7 @@ class SpatialVideoTransformer(SpatialTransformer):
             time_context = repeat(
                 time_context_first_timestep, "b ... -> (b n) ...", n=h * w
             )
-        elif time_context is not None and not self.use_spatial_context:
+        elif time_context is not None:
             time_context = repeat(time_context, "b ... -> (b n) ...", n=h * w)
             if time_context.ndim == 2:
                 time_context = rearrange(time_context, "b c -> b 1 c")
@@ -766,7 +743,6 @@ class SpatialVideoTransformer(SpatialTransformer):
         x = rearrange(x, "b (h w) c -> b c h w", h=h, w=w)
         if not self.use_linear:
             x = self.proj_out(x)
-        out = x + x_in
-        return out
+        return x + x_in
 
 
