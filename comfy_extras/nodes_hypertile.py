@@ -13,16 +13,12 @@ def random_divisor(value: int, min_value: int, /, max_options: int = 1) -> int:
 
     ns = [value // i for i in divisors[:max_options]]  # has at least 1 element
 
-    if len(ns) - 1 > 0:
-        idx = randint(low=0, high=len(ns) - 1, size=(1,)).item()
-    else:
-        idx = 0
-
+    idx = randint(low=0, high=len(ns) - 1, size=(1,)).item() if len(ns) > 1 else 0
     return ns[idx]
 
 class HyperTile:
     @classmethod
-    def INPUT_TYPES(s):
+    def INPUT_TYPES(cls):
         return {"required": { "model": ("MODEL",),
                              "tile_size": ("INT", {"default": 256, "min": 1, "max": 2048}),
                              "swap_size": ("INT", {"default": 2, "min": 1, "max": 128}),
@@ -47,23 +43,23 @@ class HyperTile:
         self.temp = None
 
         def hypertile_in(q, k, v, extra_options):
-            if q.shape[-1] in apply_to:
-                shape = extra_options["original_shape"]
-                aspect_ratio = shape[-1] / shape[-2]
-
-                hw = q.size(1)
-                h, w = round(math.sqrt(hw * aspect_ratio)), round(math.sqrt(hw / aspect_ratio))
-
-                factor = 2**((q.shape[-1] // model_channels) - 1) if scale_depth else 1
-                nh = random_divisor(h, latent_tile_size * factor, swap_size)
-                nw = random_divisor(w, latent_tile_size * factor, swap_size)
-
-                if nh * nw > 1:
-                    q = rearrange(q, "b (nh h nw w) c -> (b nh nw) (h w) c", h=h // nh, w=w // nw, nh=nh, nw=nw)
-                    self.temp = (nh, nw, h, w)
+            if q.shape[-1] not in apply_to:
                 return q, k, v
+            shape = extra_options["original_shape"]
+            aspect_ratio = shape[-1] / shape[-2]
 
+            hw = q.size(1)
+            h, w = round(math.sqrt(hw * aspect_ratio)), round(math.sqrt(hw / aspect_ratio))
+
+            factor = 2**((q.shape[-1] // model_channels) - 1) if scale_depth else 1
+            nh = random_divisor(h, latent_tile_size * factor, swap_size)
+            nw = random_divisor(w, latent_tile_size * factor, swap_size)
+
+            if nh * nw > 1:
+                q = rearrange(q, "b (nh h nw w) c -> (b nh nw) (h w) c", h=h // nh, w=w // nw, nh=nh, nw=nw)
+                self.temp = (nh, nw, h, w)
             return q, k, v
+
         def hypertile_out(out, extra_options):
             if self.temp is not None:
                 nh, nw, h, w = self.temp

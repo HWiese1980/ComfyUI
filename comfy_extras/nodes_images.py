@@ -13,7 +13,7 @@ MAX_RESOLUTION = nodes.MAX_RESOLUTION
 
 class ImageCrop:
     @classmethod
-    def INPUT_TYPES(s):
+    def INPUT_TYPES(cls):
         return {"required": { "image": ("IMAGE",),
                               "width": ("INT", {"default": 512, "min": 1, "max": MAX_RESOLUTION, "step": 1}),
                               "height": ("INT", {"default": 512, "min": 1, "max": MAX_RESOLUTION, "step": 1}),
@@ -35,7 +35,7 @@ class ImageCrop:
 
 class RepeatImageBatch:
     @classmethod
-    def INPUT_TYPES(s):
+    def INPUT_TYPES(cls):
         return {"required": { "image": ("IMAGE",),
                               "amount": ("INT", {"default": 1, "min": 1, "max": 64}),
                               }}
@@ -56,18 +56,21 @@ class SaveAnimatedWEBP:
 
     methods = {"default": 4, "fastest": 0, "slowest": 6}
     @classmethod
-    def INPUT_TYPES(s):
-        return {"required":
-                    {"images": ("IMAGE", ),
-                     "filename_prefix": ("STRING", {"default": "ComfyUI"}),
-                     "fps": ("FLOAT", {"default": 6.0, "min": 0.01, "max": 1000.0, "step": 0.01}),
-                     "lossless": ("BOOLEAN", {"default": True}),
-                     "quality": ("INT", {"default": 80, "min": 0, "max": 100}),
-                     "method": (list(s.methods.keys()),),
-                     # "num_frames": ("INT", {"default": 0, "min": 0, "max": 8192}),
-                     },
-                "hidden": {"prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO"},
-                }
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "images": ("IMAGE",),
+                "filename_prefix": ("STRING", {"default": "ComfyUI"}),
+                "fps": (
+                    "FLOAT",
+                    {"default": 6.0, "min": 0.01, "max": 1000.0, "step": 0.01},
+                ),
+                "lossless": ("BOOLEAN", {"default": True}),
+                "quality": ("INT", {"default": 80, "min": 0, "max": 100}),
+                "method": (list(cls.methods.keys()),),
+            },
+            "hidden": {"prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO"},
+        }
 
     RETURN_TYPES = ()
     FUNCTION = "save_images"
@@ -80,7 +83,7 @@ class SaveAnimatedWEBP:
         method = self.methods.get(method)
         filename_prefix += self.prefix_append
         full_output_folder, filename, counter, subfolder, filename_prefix = folder_paths.get_save_image_path(filename_prefix, self.output_dir, images[0].shape[1], images[0].shape[0])
-        results = list()
+        results = []
         pil_images = []
         for image in images:
             i = 255. * image.cpu().numpy()
@@ -90,11 +93,11 @@ class SaveAnimatedWEBP:
         metadata = pil_images[0].getexif()
         if not args.disable_metadata:
             if prompt is not None:
-                metadata[0x0110] = "prompt:{}".format(json.dumps(prompt))
+                metadata[0x0110] = f"prompt:{json.dumps(prompt)}"
             if extra_pnginfo is not None:
                 inital_exif = 0x010f
                 for x in extra_pnginfo:
-                    metadata[inital_exif] = "{}:{}".format(x, json.dumps(extra_pnginfo[x]))
+                    metadata[inital_exif] = f"{x}:{json.dumps(extra_pnginfo[x])}"
                     inital_exif -= 1
 
         if num_frames == 0:
@@ -121,7 +124,7 @@ class SaveAnimatedPNG:
         self.prefix_append = ""
 
     @classmethod
-    def INPUT_TYPES(s):
+    def INPUT_TYPES(cls):
         return {"required":
                     {"images": ("IMAGE", ),
                      "filename_prefix": ("STRING", {"default": "ComfyUI"}),
@@ -141,7 +144,6 @@ class SaveAnimatedPNG:
     def save_images(self, images, fps, compress_level, filename_prefix="ComfyUI", prompt=None, extra_pnginfo=None):
         filename_prefix += self.prefix_append
         full_output_folder, filename, counter, subfolder, filename_prefix = folder_paths.get_save_image_path(filename_prefix, self.output_dir, images[0].shape[1], images[0].shape[0])
-        results = list()
         pil_images = []
         for image in images:
             i = 255. * image.cpu().numpy()
@@ -159,12 +161,7 @@ class SaveAnimatedPNG:
 
         file = f"{filename}_{counter:05}_.png"
         pil_images[0].save(os.path.join(full_output_folder, file), pnginfo=metadata, compress_level=compress_level, save_all=True, duration=int(1000.0/fps), append_images=pil_images[1:])
-        results.append({
-            "filename": file,
-            "subfolder": subfolder,
-            "type": self.type
-        })
-
+        results = [{"filename": file, "subfolder": subfolder, "type": self.type}]
         return { "ui": { "images": results, "animated": (True,)} }
 
 NODE_CLASS_MAPPINGS = {

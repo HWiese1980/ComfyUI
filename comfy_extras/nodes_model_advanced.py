@@ -66,7 +66,7 @@ def rescale_zero_terminal_snr_sigmas(sigmas):
 
 class ModelSamplingDiscrete:
     @classmethod
-    def INPUT_TYPES(s):
+    def INPUT_TYPES(cls):
         return {"required": { "model": ("MODEL",),
                               "sampling": (["eps", "v_prediction", "lcm"],),
                               "zsnr": ("BOOLEAN", {"default": False}),
@@ -101,7 +101,7 @@ class ModelSamplingDiscrete:
 
 class ModelSamplingContinuousEDM:
     @classmethod
-    def INPUT_TYPES(s):
+    def INPUT_TYPES(cls):
         return {"required": { "model": ("MODEL",),
                               "sampling": (["v_prediction", "eps"],),
                               "sigma_max": ("FLOAT", {"default": 120.0, "min": 0.0, "max": 1000.0, "step":0.001, "round": False}),
@@ -131,7 +131,7 @@ class ModelSamplingContinuousEDM:
 
 class RescaleCFG:
     @classmethod
-    def INPUT_TYPES(s):
+    def INPUT_TYPES(cls):
         return {"required": { "model": ("MODEL",),
                               "multiplier": ("FLOAT", {"default": 0.7, "min": 0.0, "max": 1.0, "step": 0.01}),
                               }}

@@ -146,11 +146,7 @@ class ControlNet(ControlBase):
 
         if self.timestep_range is not None:
             if t[0] > self.timestep_range[0] or t[0] < self.timestep_range[1]:
-                if control_prev is not None:
-                    return control_prev
-                else:
-                    return None
-
+                return control_prev if control_prev is not None else None
         dtype = self.control_model.dtype
         if self.manual_cast_dtype is not None:
             dtype = self.manual_cast_dtype
@@ -304,8 +300,7 @@ class ControlLora(ControlNet):
         super().cleanup()
 
     def get_models(self):
-        out = ControlBase.get_models(self)
-        return out
+        return ControlBase.get_models(self)
 
     def inference_memory_requirements(self, dtype):
         return comfy.utils.calculate_parameters(self.control_weights) * comfy.model_management.dtype_size(dtype) + ControlBase.inference_memory_requirements(self, dtype)
@@ -328,8 +323,8 @@ def load_controlnet(ckpt_path, model=None):
         while loop:
             suffix = [".weight", ".bias"]
             for s in suffix:
-                k_in = "controlnet_down_blocks.{}{}".format(count, s)
-                k_out = "zero_convs.{}.0{}".format(count, s)
+                k_in = f"controlnet_down_blocks.{count}{s}"
+                k_out = f"zero_convs.{count}.0{s}"
                 if k_in not in controlnet_data:
                     loop = False
                     break
@@ -342,21 +337,21 @@ def load_controlnet(ckpt_path, model=None):
             suffix = [".weight", ".bias"]
             for s in suffix:
                 if count == 0:
-                    k_in = "controlnet_cond_embedding.conv_in{}".format(s)
+                    k_in = f"controlnet_cond_embedding.conv_in{s}"
                 else:
-                    k_in = "controlnet_cond_embedding.blocks.{}{}".format(count - 1, s)
-                k_out = "input_hint_block.{}{}".format(count * 2, s)
+                    k_in = f"controlnet_cond_embedding.blocks.{count - 1}{s}"
+                k_out = f"input_hint_block.{count * 2}{s}"
                 if k_in not in controlnet_data:
-                    k_in = "controlnet_cond_embedding.conv_out{}".format(s)
+                    k_in = f"controlnet_cond_embedding.conv_out{s}"
                     loop = False
                 diffusers_keys[k_in] = k_out
             count += 1
 
-        new_sd = {}
-        for k in diffusers_keys:
-            if k in controlnet_data:
-                new_sd[diffusers_keys[k]] = controlnet_data.pop(k)
-
+        new_sd = {
+            diffusers_keys[k]: controlnet_data.pop(k)
+            for k in diffusers_keys
+            if k in controlnet_data
+        }
         leftover_keys = controlnet_data.keys()
         if len(leftover_keys) > 0:
             print("leftover keys:", leftover_keys)
@@ -385,7 +380,9 @@ def load_controlnet(ckpt_path, model=None):
     if manual_cast_dtype is not None:
         controlnet_config["operations"] = comfy.ops.manual_cast
     controlnet_config.pop("out_channels")
-    controlnet_config["hint_channels"] = controlnet_data["{}input_hint_block.0.weight".format(prefix)].shape[1]
+    controlnet_config["hint_channels"] = controlnet_data[
+        f"{prefix}input_hint_block.0.weight"
+    ].shape[1]
     control_model = comfy.cldm.cldm.ControlNet(**controlnet_config)
 
     if pth:
@@ -393,10 +390,10 @@ def load_controlnet(ckpt_path, model=None):
             if model is not None:
                 comfy.model_management.load_models_gpu([model])
                 model_sd = model.model_state_dict()
+                c_m = "control_model."
                 for x in controlnet_data:
-                    c_m = "control_model."
                     if x.startswith(c_m):
-                        sd_key = "diffusion_model.{}".format(x[len(c_m):])
+                        sd_key = f"diffusion_model.{x[len(c_m):]}"
                         if sd_key in model_sd:
                             cd = controlnet_data[x]
                             cd += model_sd[sd_key].type(cd.dtype).to(cd.device)
@@ -412,13 +409,16 @@ def load_controlnet(ckpt_path, model=None):
         missing, unexpected = control_model.load_state_dict(controlnet_data, strict=False)
     print(missing, unexpected)
 
-    global_average_pooling = False
     filename = os.path.splitext(ckpt_path)[0]
-    if filename.endswith("_shuffle") or filename.endswith("_shuffle_fp16"): #TODO: smarter way of enabling global_average_pooling
-        global_average_pooling = True
-
-    control = ControlNet(control_model, global_average_pooling=global_average_pooling, load_device=load_device, manual_cast_dtype=manual_cast_dtype)
-    return control
+    global_average_pooling = bool(
+        filename.endswith("_shuffle") or filename.endswith("_shuffle_fp16")
+    )
+    return ControlNet(
+        control_model,
+        global_average_pooling=global_average_pooling,
+        load_device=load_device,
+        manual_cast_dtype=manual_cast_dtype,
+    )
 
 class T2IAdapter(ControlBase):
     def __init__(self, t2i_model, channels_in, device=None):
